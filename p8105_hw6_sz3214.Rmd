@@ -1,0 +1,92 @@
+---
+title: "p8105_hw6_sz3214"
+output: github_document
+date: "2024-12-01"
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(broom)
+library(modelr)
+library(rnoaa)
+```
+
+# Problem 1
+
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") |>
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) |>
+  select(name, id, everything())
+
+set.seed(1)
+```
+
+bootstrapping
+
+```{r}
+boot_sample = function(df) {
+  sample_frac(df, replace = TRUE)
+}
+
+boot_straps = tibble(bootstrap_id = 1:5000) |>
+  mutate(
+    strap_sample = map(bootstrap_id, ~ boot_sample(weather_df))
+  ) |>
+  mutate(
+    models = map(strap_sample, ~ lm(tmax ~ tmin, data = .x)),
+    glance_results = map(models, broom::glance),
+    tidy_results = map(models, broom::tidy)
+  )
+
+bootstrap_results = boot_straps |>
+  mutate(
+    r_squared = map_dbl(glance_results, ~ .x$r.squared),
+    log_b0_b1 = map_dbl(tidy_results, ~ {
+      coefs = .x |> filter(term %in% c("(Intercept)", "tmin"))
+      log(prod(coefs$estimate))
+    })
+  )
+```
+
+Plot the distributions of r^2 and log(b0 * b1)
+
+```{r}
+bootstrap_results |>
+  pivot_longer(cols = c(r_squared, log_b0_b1), names_to = "quantity", values_to = "value") |>
+  ggplot(aes(x = value, fill = quantity)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~quantity, scales = "free") +
+  theme_minimal() +
+  labs(title = "Bootstrap Distributions of r^2 and log(b0 * b1)",
+       x = "Value",
+       y = "Density")
+```
+
+95% CI
+
+```{r}
+bootstrap_results |>
+  summarize(
+    r_squared_ci_lower = quantile(r_squared, 0.025),
+    r_squared_ci_upper = quantile(r_squared, 0.975),
+    log_b0_b1_ci_lower = quantile(log_b0_b1, 0.025),
+    log_b0_b1_ci_upper = quantile(log_b0_b1, 0.975)
+  )
+```
+
+
+
+
+
+
+
+
+
