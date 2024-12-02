@@ -31,7 +31,7 @@ weather_df =
 set.seed(1)
 ```
 
-bootstrapping
+**bootstrapping**
 
 ```{r}
 boot_sample = function(df) {
@@ -58,7 +58,7 @@ bootstrap_results = boot_straps |>
   )
 ```
 
-Plot the distributions of r^2 and log(b0 * b1)
+**Plot the distributions of r^2 and log(b0 * b1)**
 
 ```{r}
 bootstrap_results |>
@@ -72,7 +72,7 @@ bootstrap_results |>
        y = "Density")
 ```
 
-95% CI
+**95% CI**
 
 ```{r}
 bootstrap_results |>
@@ -87,7 +87,7 @@ bootstrap_results |>
 
 # Problem 2
 
-data import and cleaning
+**data import and cleaning**
 
 ```{r}
 homicide = read.csv("homicide-data.csv") |> 
@@ -103,7 +103,7 @@ homicide = read.csv("homicide-data.csv") |>
   )
 ```
 
-Logistic regression for Baltimore
+**Logistic regression for Baltimore**
 
 ```{r}
 baltimore = homicide |>
@@ -128,7 +128,7 @@ baltimore_results = baltimore_model |>
 baltimore_results
 ```
 
-Logistic regression for all cities
+**Logistic regression for all cities**
 
 ```{r}
 citywise = homicide |>
@@ -150,7 +150,7 @@ citywise = homicide |>
 citywise
 ```
 
-plot
+**plot**
 
 ```{r}
 citywise |>
@@ -167,6 +167,96 @@ citywise |>
 ```
 
 In most cities, homicides involving male victims are less likely to be solved compared to those involving female victims, with odds ratios often below 1. However, many confidence intervals are wide and overlap with 1, indicating significant uncertainty and lack of statistical significance in these estimates. A few cities, such as Richmond, VA, and Oakland, CA, show potentially significant disparities, suggesting that male victims may receive less investigative attention. 
+
+
+# Problem 3
+
+**load and clean data**
+
+```{r}
+birthweight = read.csv("birthweight.csv") |> 
+  janitor::clean_names() |> 
+  mutate(
+    babysex = factor(babysex),
+    frace = factor(frace),
+    mrace = factor(mrace),
+    malform = factor(malform)
+  ) |>
+  drop_na()
+```
+
+**effect model**
+
+```{r}
+model1 = lm(bwt ~ gaweeks + wtgain + mrace, data = birthweight)
+model1
+```
+
+**residual plot of model 1**
+
+```{r}
+birthweight |> 
+  add_predictions(model1) |>
+  add_residuals(model1) |> 
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point() +
+  labs(title = "Residuals of Model 1")
+```
+
+- For Model 1, I aimed to understand the relationship between the baby's birth weight and potential influential predictors (gestational age, mother's weight gain during pregnancy and mother's race). The gestational age is a direct indicator of development, weight gain during pregnancy reflects maternal health, and race can be associated with different health outcomes due to socio-economic factors.
+
+- The plot shows residuals versus predicted values. The residuals are randomly scattered around zero, indicating no strong patterns or biases, which suggests the model fits the data reasonably well. However, there are some outliers that might need further investigation.
+
+**model using length at birth and gestational age as predictors**
+
+```{r}
+model2 = lm(bwt ~ blength + gaweeks, data = birthweight)
+model2
+```
+
+**model using head circumference, length, sex, and all interactions (including the three-way interaction) between these**
+
+```{r}
+model3 = lm(bwt ~ bhead + blength + babysex + 
+            bhead * blength + blength * babysex + babysex * bhead + 
+            bhead * blength * babysex, data = birthweight)
+model3
+```
+
+**Model comparison using cross validation**
+
+```{r}
+cv_results = crossv_mc(birthweight, 100)
+
+cv_results = cv_results %>%
+  mutate(
+    model1 = map(train, ~ lm(bwt ~ gaweeks + wtgain + mrace, data = .)),
+    model2 = map(train, ~ lm(bwt ~ blength + gaweeks, data = .)),
+    model3 = map(train, ~ lm(bwt ~ bhead + blength + babysex + bhead * blength + blength * babysex + babysex * bhead + bhead * blength * babysex, data = .))
+  ) %>%
+  mutate(
+    rmse1 = map2_dbl(model1, test, ~ rmse(.x, .y)),
+    rmse2 = map2_dbl(model2, test, ~ rmse(.x, .y)),
+    rmse3 = map2_dbl(model3, test, ~ rmse(.x, .y))
+  )
+```
+
+**Plot RMSE comparison**
+
+```{r}
+cv_results %>%
+  select(rmse1, rmse2, rmse3) %>%
+  pivot_longer(everything(), names_to = "model", values_to = "rmse") %>% 
+  ggplot(aes(x = model, y = rmse)) +
+  geom_violin() +
+  labs(title = "Cross-Validated Prediction Error for Models",
+       x = "Model",
+       y = "RMSE")
+```
+
+- Model 1 has the highest RMSE, indicating poorer predictive performance compared to the other models.
+- Model 2 shows lower RMSE than Model 1, suggesting an improved fit.
+- Model 3 has the lowest RMSE and the narrowest distribution, indicating that it provides the most accurate and consistent predictions.
 
 
 
