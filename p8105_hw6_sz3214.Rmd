@@ -9,6 +9,8 @@ library(tidyverse)
 library(broom)
 library(modelr)
 library(rnoaa)
+library(readr)
+library(purrr)
 ```
 
 # Problem 1
@@ -83,8 +85,88 @@ bootstrap_results |>
 ```
 
 
+# Problem 2
 
+data import and cleaning
 
+```{r}
+homicide = read.csv("homicide-data.csv") |> 
+  janitor::clean_names() |> 
+  filter(
+    !city %in% c("Dallas", "Phoenix", "Kansas City", "Tulsa"),
+    victim_race %in% c("White", "Black")
+  ) |>
+  mutate(
+    city_state = paste(city, state, sep = ", "),
+    victim_age = as.numeric(victim_age),
+    resolved = ifelse(disposition %in% c("Closed by arrest", "Closed without arrest"), 1, 0)
+  )
+```
+
+Logistic regression for Baltimore
+
+```{r}
+baltimore = homicide |>
+  filter(city_state == "Baltimore, MD")
+
+baltimore_model = glm(
+  resolved ~ victim_age + victim_sex + victim_race, 
+  data = baltimore, 
+  family = binomial()
+)
+
+baltimore_results = baltimore_model |> 
+  broom::tidy() |>
+  filter(term == "victim_sexMale") |>
+  mutate(
+    odds_ratio = exp(estimate), 
+    conf.low = exp(estimate - 1.96 * std.error),  
+    conf.high = exp(estimate + 1.96 * std.error) 
+  )|>
+    select(odds_ratio, conf.low, conf.high)
+
+baltimore_results
+```
+
+Logistic regression for all cities
+
+```{r}
+citywise = homicide |>
+  group_by(city_state) |>
+  nest() |>
+  mutate(
+    glm_model = map(data, ~ glm(resolved ~ victim_age + victim_sex + victim_race, data = .x, family = binomial())),
+    results = map(glm_model, ~ broom::tidy(.x))
+  ) |>
+  unnest(results) |>
+  filter(term == "victim_sexMale") |>
+  mutate(
+    odds_ratio = exp(estimate),
+    conf.low = exp(estimate - 1.96 * std.error),
+    conf.high = exp(estimate + 1.96 * std.error)
+  ) |> 
+  select(city_state, odds_ratio, conf.low, conf.high)
+
+citywise
+```
+
+plot
+
+```{r}
+citywise |>
+  ggplot(aes(x = reorder(city_state, odds_ratio), y = odds_ratio)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Adjusted Odds Ratios for Solving Homicides (Male vs. Female Victims)",
+    x = "City",
+    y = "Odds Ratio"
+  )
+```
+
+In most cities, homicides involving male victims are less likely to be solved compared to those involving female victims, with odds ratios often below 1. However, many confidence intervals are wide and overlap with 1, indicating significant uncertainty and lack of statistical significance in these estimates. A few cities, such as Richmond, VA, and Oakland, CA, show potentially significant disparities, suggesting that male victims may receive less investigative attention. 
 
 
 
